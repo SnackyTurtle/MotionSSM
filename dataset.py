@@ -1,4 +1,6 @@
 import os
+
+import torch
 from torch.utils.data import Dataset
 import glob
 import numpy as np
@@ -65,7 +67,7 @@ class MotionDataset(Dataset):
 
         # calculate features from box sequence
         delta_boxes = [seq_boxes[i] - seq_boxes[i-1] for i in range(1,self.seq_len)]
-        seq_features = np.concatenate([np.array(seq_boxes[1:]), np.array(delta_boxes)], axis=1)
+        seq_features = torch.concatenate([torch.tensor(seq_boxes[1:]), torch.tensor(delta_boxes)], dim=1)
 
         out = {'gt': curr_gt, 'gt_box': curr_box, 'seq_features': seq_features}
         return out
@@ -73,3 +75,4 @@ class MotionDataset(Dataset):
 
     def __len__(self):
         return self.num_samples
+
