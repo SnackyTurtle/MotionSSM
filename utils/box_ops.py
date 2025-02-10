@@ -2,8 +2,10 @@
 """
 Utilities for bounding box manipulation and GIoU.
 """
-import torch
 from torchvision.ops.boxes import box_area
+
+import torch
+
 
 def box_cxcywh_to_xyxy(x):
     x_c, y_c, w, h = x.unbind(-1)
@@ -58,3 +60,31 @@ def generalized_box_iou(boxes1, boxes2):
     area = wh[:, :, 0] * wh[:, :, 1]
 
     return iou - (area - union) / area
+
+
+def normalize_box(box, image_size):
+    box[...,0] = box[...,0]/image_size[0]
+    box[...,1] = box[...,1]/image_size[1]
+    box[...,2] = box[...,2]/image_size[0]
+    box[...,3] = box[...,3]/image_size[1]
+
+    if box.shape[-1] == 8:
+        box[..., 4] = box[..., 4] / image_size[0]
+        box[..., 5] = box[..., 5] / image_size[1]
+        box[..., 6] = box[..., 6] / image_size[0]
+        box[..., 7] = box[..., 7] / image_size[1]
+    return box
+
+
+def unnormalize_box(box, image_size):
+    box[..., 0] = box[..., 0] * image_size[0]
+    box[..., 1] = box[..., 1] * image_size[1]
+    box[..., 2] = box[..., 2] * image_size[0]
+    box[..., 3] = box[..., 3] * image_size[1]
+
+    if box.shape[-1] == 8:
+        box[..., 4] = box[..., 4] * image_size[0]
+        box[..., 5] = box[..., 5] * image_size[1]
+        box[..., 6] = box[..., 6] * image_size[0]
+        box[..., 7] = box[..., 7] * image_size[1]
+    return box

@@ -1,7 +1,9 @@
-TrackFormer_Modified/trained models/**/*.pth
 **__pycache__
 **autopep8
 DanceTrack/*
+output/*
+checkpoints/*
+runs/*
 **.idea
 **.ipynb_checkpoints
 

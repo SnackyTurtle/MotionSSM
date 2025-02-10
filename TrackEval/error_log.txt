@@ -1,0 +1,13 @@
+MotChallenge2DBox
+
+Traceback (most recent call last):
+  File "/home/fredo/PycharmProjects/MotionSSM/TrackEval/trackeval/eval.py", line 153, in evaluate
+    metric.plot_single_tracker_results(table_res, tracker_display_name, c_cls,
+  File "/home/fredo/PycharmProjects/MotionSSM/TrackEval/trackeval/metrics/hota.py", line 185, in plot_single_tracker_results
+    from matplotlib import pyplot as plt
+ModuleNotFoundError: No module named 'matplotlib'
+
+
+
+
+
