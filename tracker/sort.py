@@ -16,21 +16,24 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 from __future__ import print_function
-from collections import deque
-from utils.box_ops import  box_xyxy_to_cxcywh, box_cxcywh_to_xyxy, normalize_box, unnormalize_box
 
-import os
+from collections import deque
+
 import numpy as np
 import torch
-
-import glob
-import time
 from scipy.optimize import linear_sum_assignment
+
+from utils.box_ops import box_xyxy_to_cxcywh, box_cxcywh_to_xyxy, normalize_box, unnormalize_box
 
 np.random.seed(0)
 
 
-def linear_assignment(cost_matrix):
+def linear_assignment(cost_matrix: np.ndarray):
+    """ solves the linear assignment problem minimizing the cost
+
+    :param cost_matrix: contains -iou values for each possible pair
+    :return: a two-dimensional array containing the correspondences
+    """
     try:
         import lap
         _, x, y = lap.lapjv(cost_matrix, extend_cost=True)
@@ -41,9 +44,12 @@ def linear_assignment(cost_matrix):
         return np.array(list(zip(x, y)))
 
 
-def iou_batch(bb_test, bb_gt):
-    """
-    From SORT: Computes IOU between two bboxes in the form [x1,y1,x2,y2]
+def iou_batch(bb_test: np.ndarray, bb_gt: np.ndarray):
+    """ from SORT: Computes IOU between two bboxes in the form [x1,y1,x2,y2]
+
+    :param bb_test: batched predicted bounding boxes in the form [x1,y1,x2,y2]
+    :param bb_gt: batched detected bounding boxes in the form [x1,y1,x2,y2]
+    :return: matrix which contains iou values for each possible pair
     """
     bb_gt = np.expand_dims(bb_gt, 0)
     bb_test = np.expand_dims(bb_test, 1)
@@ -60,45 +66,20 @@ def iou_batch(bb_test, bb_gt):
     return (o)
 
 
-def convert_bbox_to_z(bbox):
-    """
-    Takes a bounding box in the form [x1,y1,x2,y2] and returns z in the form
-      [x,y,s,r] where x,y is the centre of the box and s is the scale/area and r is
-      the aspect ratio
-    """
-    w = bbox[2] - bbox[0]
-    h = bbox[3] - bbox[1]
-    x = bbox[0] + w / 2.
-    y = bbox[1] + h / 2.
-    s = w * h  # scale is just area
-    r = w / float(h)
-    return np.array([x, y, s, r]).reshape((4, 1))
+def associate_detections_to_trackers(detections: np.ndarray, trackers: np.ndarray, iou_threshold=0.3):
+    """ Assigns detections to tracked object (both represented as bounding boxes)
 
-
-def convert_x_to_bbox(x, score=None):
-    """
-    Takes a bounding box in the centre form [x,y,s,r] and returns it in the form
-      [x1,y1,x2,y2] where x1,y1 is the top left and x2,y2 is the bottom right
-    """
-    w = np.sqrt(x[2] * x[3])
-    h = x[2] / w
-    if (score == None):
-        return np.array([x[0] - w / 2., x[1] - h / 2., x[0] + w / 2., x[1] + h / 2.]).reshape((1, 4))
-    else:
-        return np.array([x[0] - w / 2., x[1] - h / 2., x[0] + w / 2., x[1] + h / 2., score]).reshape((1, 5))
-
-
-def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
-    """
-    Assigns detections to tracked object (both represented as bounding boxes)
-
+    :param detections: detections from the current track in the form [x1,y1,x2,y2,score]
+    :param trackers:  list of predicted bounding boxes
+    :param iou_threshold: minimum iou threshold to be matched
     Returns 3 lists of matches, unmatched_detections and unmatched_trackers
     """
-    if (len(trackers) == 0):
+    if len(trackers) == 0:
         return np.empty((0, 2), dtype=int), np.arange(len(detections)), np.empty((0, 5), dtype=int)
 
     iou_matrix = iou_batch(detections, trackers)
 
+    # matches predictions to detections
     if min(iou_matrix.shape) > 0:
         a = (iou_matrix > iou_threshold).astype(np.int32)
         if a.sum(1).max() == 1 and a.sum(0).max() == 1:
@@ -108,19 +89,22 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
     else:
         matched_indices = np.empty(shape=(0, 2))
 
+    # determine unmatched detections
     unmatched_detections = []
     for d, det in enumerate(detections):
-        if (d not in matched_indices[:, 0]):
+        if d not in matched_indices[:, 0]:
             unmatched_detections.append(d)
+
+    # determine unmatched predictions (unmatched tracks)
     unmatched_trackers = []
     for t, trk in enumerate(trackers):
-        if (t not in matched_indices[:, 1]):
+        if t not in matched_indices[:, 1]:
             unmatched_trackers.append(t)
 
     # filter out matched with low IOU
     matches = []
     for m in matched_indices:
-        if (iou_matrix[m[0], m[1]] < iou_threshold):
+        if iou_matrix[m[0], m[1]] < iou_threshold:
             unmatched_detections.append(m[0])
             unmatched_trackers.append(m[1])
         else:
@@ -132,7 +116,11 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
 
     return matches, np.array(unmatched_detections), np.array(unmatched_trackers)
 
+
 class Track(object):
+    """
+    Represents a tracked object in a sequence
+    """
     count = 0
 
     def __init__(self, dets):
@@ -148,7 +136,11 @@ class Track(object):
         self.seq_features = deque(maxlen=10)
         self.seq_features.append(torch.concatenate([dets, delta], dim=0))
 
-    def update(self, dets):
+    def update(self, dets: np.ndarray):
+        """ updates the position of the tracked object
+
+        :param dets: bounding box and score in the form [x1,y1,x2,y2,score]
+        """
         dets = box_xyxy_to_cxcywh(torch.tensor(dets[:4])).squeeze()
         delta = dets - self.last_pos
         self.last_pos = dets
@@ -158,9 +150,17 @@ class Track(object):
         self.hit_streak += 1
 
     def get_last_pos(self):
+        """ getter for the current position of the tracked object
+
+        :return: current position in the form [x_center,y_center,w,h] as a torch.tensor
+        """
         return self.last_pos
 
     def get_seq_features(self):
+        """ getter for the n previous positions of the tracked object
+
+        :return: n previous positions in the form [x_center,y_center,w,h] as a torch.tensor
+        """
         if self.time_since_update > 0:
             self.hit_streak = 0
         self.time_since_update += 1
@@ -169,8 +169,11 @@ class Track(object):
 
 class Sort(object):
     def __init__(self, max_age=1, min_hits=3, iou_threshold=0.3):
-        """
-        Sets key parameters for SORT
+        """ sets key parameters for SORT
+
+        :param max_age: how many frames an unmatched track persists
+        :param min_hits: how many successful matches are needed to initialize a tracker
+        :param iou_threshold: minimum iou threshold to be matched
         """
         self.max_age = max_age
         self.min_hits = min_hits
@@ -178,35 +181,41 @@ class Sort(object):
         self.trackers = []
         self.frame_count = 0
 
+    def update(self, dets=np.empty((0, 5)), image_size=(0, 0), motion_model=None):
+        """ this method must be called once for each frame even with empty detections (use np.empty((0, 5)) for frames without detections).
 
-    def update(self, dets=np.empty((0, 5)), image_size=(0,0), motion_model=None):
-        """
-        Params:
-          dets - a numpy array of detections in the format [[x1,y1,x2,y2,score],[x1,y1,x2,y2,score],...]
-        Requires: this method must be called once for each frame even with empty detections (use np.empty((0, 5)) for frames without detections).
-        Returns the a similar array, where the last column is the object ID.
-
-        NOTE: The number of objects returned may differ from the number of detections provided.
+        :param dets: a numpy array of detections in the format [[x1,y1,x2,y2,score],[x1,y1,x2,y2,score],...]
+        :param image_size: tuple which contains the original image size
+        :param motion_model: previously trained motion predictor
+        :return: a similar array, where the last column is the object ID.
         """
         self.frame_count += 1
+
         # get predicted locations from existing trackers.
         trks = np.zeros((len(self.trackers), 5))
         to_del = []
         ret = []
         for t, trk in enumerate(trks):
-            # pos = self.trackers[t].predict()[0]
+            # preprocess model input and postprocess output
+            # input needs to be normalized and in [cx,cy,w,h] format
+            # output needs to be 'unnormalized' and in [x1,y1,x2,y2] format
             model_input = self.trackers[t].get_seq_features()
             model_input = normalize_box(model_input, image_size)
             pos = motion_model(model_input)
             pos = unnormalize_box(pos, image_size)
             pos = box_cxcywh_to_xyxy(pos).squeeze(0)
             pos = np.array(pos)
+
             trk[:] = [pos[0], pos[1], pos[2], pos[3], 0]
             if np.any(np.isnan(pos)):
                 to_del.append(t)
         trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
+
+        # remove invalid tracks
         for t in reversed(to_del):
             self.trackers.pop(t)
+
+        # match detections and predictions
         matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets, trks, self.iou_threshold)
 
         # update matched trackers with assigned detections
@@ -226,8 +235,8 @@ class Sort(object):
             i -= 1
 
             # remove dead tracklet
-            if (trk.time_since_update > self.max_age):
+            if trk.time_since_update > self.max_age:
                 self.trackers.pop(i)
-        if (len(ret) > 0):
+        if len(ret) > 0:
             return np.concatenate(ret)
         return np.empty((0, 5))

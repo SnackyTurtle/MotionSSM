@@ -1,9 +1,16 @@
-import os.path as osp
 import os
+import os.path as osp
+
 import numpy as np
 
 
 def preprocess_train(seq_root: str, label_root: str):
+    """ changes the ground-truth bbox format from [left,top,w,h] to [cx,cy,w,h]
+    also normalizes the box coordinates and splits the ground-truths by tracked objects
+
+    :param seq_root: dataset dir
+    :param label_root: output dir for processed ground-truth
+    """
 
     if not osp.exists(label_root):
         os.makedirs(label_root)
@@ -14,7 +21,7 @@ def preprocess_train(seq_root: str, label_root: str):
     for tr in trainer:
         seq_root_tr = (osp.join(seq_root, tr))
         info_root_tr = (osp.join(seq_root, 'train'))
-        seqs =[s for s in os.listdir(seq_root_tr)]
+        seqs = [s for s in os.listdir(seq_root_tr)]
 
         # iterate over all sequences in a split
         for seq in seqs:

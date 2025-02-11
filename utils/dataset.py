@@ -1,13 +1,21 @@
-from torch.utils.data import Dataset
-
-import os
-import torch
 import glob
+import os
+
 import numpy as np
+import torch
+from torch.utils.data import Dataset
 
 
 class MotionDataset(Dataset):
-    def __init__(self, seq_len, data_dir):
+    """
+    Custom dataset which returns a sequence of previous object positions for a given id
+    """
+    def __init__(self, seq_len: int, data_dir: str):
+        """ initializes the dataset with all needed information
+
+        :param seq_len: how long the returned sequence should be
+        :param data_dir: dir where the data is saved
+        """
         self.seq_len = seq_len + 1
         self.data_dir = data_dir
         self.tracks = {}
@@ -17,6 +25,7 @@ class MotionDataset(Dataset):
         self.samples_track = {}
         self.cum_ids = {}
 
+        # check if the data directory exists
         if os.path.isdir(self.data_dir):
             self.seqs = [s for s in os.listdir(self.data_dir)]
             self.seqs.sort()
@@ -41,6 +50,11 @@ class MotionDataset(Dataset):
                 last_idx = self.cum_ids[seq][-1] + self.samples_track[seq][-1]
 
     def __getitem__(self, idx):
+        """ returns a dict containing a sequence of n previous bounding boxes and the current one
+
+        :param idx: index of current frame
+        :return: dict {'gt': current gt, 'gt_box': current box, 'seq_features': prev. sequence features}
+        """
 
         # find corresponding sequence, track and start id for given idx
         for i, seq in enumerate(self.cum_ids):
@@ -66,13 +80,15 @@ class MotionDataset(Dataset):
         seq_boxes = [track_gts[idx_seq_start + pos][2:6] for pos in range(self.seq_len)]
 
         # calculate features from box sequence
-        delta_boxes = [seq_boxes[i] - seq_boxes[i-1] for i in range(1,self.seq_len)]
+        delta_boxes = [seq_boxes[i] - seq_boxes[i - 1] for i in range(1, self.seq_len)]
         seq_features = torch.concatenate([torch.tensor(seq_boxes[1:]), torch.tensor(delta_boxes)], dim=1)
 
         out = {'gt': curr_gt, 'gt_box': curr_box, 'seq_features': seq_features}
         return out
 
-
     def __len__(self):
-        return self.num_samples
+        """ returns the length of the dataset
 
+        :return: number of elements in dataset
+        """
+        return self.num_samples

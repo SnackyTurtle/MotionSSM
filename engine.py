@@ -1,20 +1,33 @@
+import glob
+import os
+import time
 from collections.abc import Iterable
+
+import numpy as np
+import torch
+
 from tracker.sort import Sort
 
-import torch
-import os
-import glob
-import numpy as np
-import time
 
+def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module, data_loader: Iterable,
+                    optimizer: torch.optim.Optimizer, device: torch.device, writer, epoch: int):
+    """ trains the given model for one epoch on the given dataset
 
-def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module, data_loader: Iterable, optimizer: torch.optim.Optimizer, device: torch.device, writer, epoch: int):
+    :param model: model to be trained
+    :param criterion: loss function
+    :param data_loader: train data loader
+    :param optimizer: used optimizer
+    :param device: device on which the training should be performed ('cuda'/'cpu')
+    :param writer: tensorboard writer which tracks the loss
+    :param epoch: current training epoch
+
+    """
+
     model.train()
     criterion.train()
 
     optimizer.zero_grad()
     for i, batch in enumerate(data_loader):
-
         features = batch['seq_features'].to(device)
         gt_box = batch['gt_box'].to(device)
 
@@ -33,7 +46,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module, data_loa
 
 
 def track(model: torch.nn.Module, phase: str, seq_path: str, split: str, output_dir: str):
+    """ uses the given model to perform MOT on a given dataset
 
+    :param model: motion model to be used
+    :param phase: subdir of the split
+    :param seq_path: dataset path
+    :param split: split which should be tracked ('train'/'val'/'text')
+    :param output_dir: path where the tracking results should be saved
+    """
     total_time = 0.0
     total_frames = 0
 
@@ -83,7 +103,4 @@ def track(model: torch.nn.Module, phase: str, seq_path: str, split: str, output_
                           file=out_file)
 
     print("Total Tracking took: %.3f seconds for %d frames or %.1f FPS" % (
-    total_time, total_frames, total_frames / total_time))
-
-
-
+        total_time, total_frames, total_frames / total_time))
